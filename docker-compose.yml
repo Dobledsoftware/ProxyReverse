@@ -9,10 +9,9 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
     networks:
-      - proxy-net
+      - reverseproxy_proxy-net
     restart: always
 
 networks:
-  proxy-net:
-    driver: bridge
-    external: false
+  reverseproxy_proxy-net:
+    external: true
