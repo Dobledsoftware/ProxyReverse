@@ -28,12 +28,15 @@ jobs:
           git checkout ${{ github.ref_name }}
           git reset --hard origin/${{ github.ref_name }}
 
-          # Validar sintaxis antes de aplicar (evita dejar Nginx caído por un typo)
-          docker exec nginx_proxy nginx -t
+          # Validar sintaxis contra el archivo NUEVO con un contenedor descartable.
+          # docker exec nginx_proxy nginx -t NO sirve: el bind-mount de un archivo
+          # suelto fija el inodo viejo y el contenedor no ve el default.conf actualizado.
+          docker run --rm -v /var/apps/reverseProxy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro nginx:latest nginx -t
 
-          # Reload sin downtime: Nginx termina las conexiones existentes gracefully
-          # y levanta workers nuevos con la config actualizada
-          docker exec nginx_proxy nginx -s reload
+          # Recrear el contenedor (no "nginx -s reload") por el mismo motivo de arriba:
+          # el proceso ya corriendo sigue con el inodo viejo aunque el archivo cambie.
+          docker rm -f nginx_proxy
+          docker run -d --name nginx_proxy -p 80:80 -v /var/apps/reverseProxy/nginx/default.conf:/etc/nginx/conf.d/default.conf --network reverseproxy_proxy-net --restart always nginx:latest
 
           echo "¡Configuración ${{ github.ref_name }} aplicada con éxito!"
 
