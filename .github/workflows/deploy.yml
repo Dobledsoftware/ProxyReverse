@@ -1,0 +1,82 @@
+name: Despliegue Automático (release-*)
+
+# Se dispara cuando se pushea cualquier rama release-*
+on:
+  push:
+    branches:
+      - 'release-*'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Conectarse al servidor por SSH y aplicar configuración
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        password: ${{ secrets.SERVER_PASSWORD }}
+        script: |
+          echo "Iniciando despliegue de ProxyReverse — versión: ${{ github.ref_name }}"
+          cd /var/apps/reverseProxy
+
+          git reset --hard
+          git clean -fd
+          git remote set-url origin https://oauth2:${{ secrets.GH_PAT }}@github.com/Dobledsoftware/ProxyReverse.git
+          git fetch --all
+          git checkout ${{ github.ref_name }}
+          git reset --hard origin/${{ github.ref_name }}
+
+          # Validar sintaxis antes de aplicar (evita dejar Nginx caído por un typo)
+          docker exec nginx_proxy nginx -t
+
+          # Reload sin downtime: Nginx termina las conexiones existentes gracefully
+          # y levanta workers nuevos con la config actualizada
+          docker exec nginx_proxy nginx -s reload
+
+          echo "¡Configuración ${{ github.ref_name }} aplicada con éxito!"
+
+    - name: Notificar deploy exitoso
+      if: success()
+      uses: dawidd6/action-send-mail@v4
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.MAIL_USERNAME }}
+        password: ${{ secrets.MAIL_PASSWORD }}
+        subject: "✅ [ProxyReverse] Deploy exitoso — ${{ github.ref_name }}"
+        to: ${{ secrets.ADMIN_EMAIL }}
+        from: "Agenda CI/CD <${{ secrets.MAIL_USERNAME }}>"
+        html_body: |
+          <h2 style="color:#28a745">✅ Deploy completado</h2>
+          <table>
+            <tr><td><b>Versión</b></td><td>${{ github.ref_name }}</td></tr>
+            <tr><td><b>Repo</b></td><td>ProxyReverse</td></tr>
+            <tr><td><b>Commit</b></td><td>${{ github.sha }}</td></tr>
+            <tr><td><b>Autor</b></td><td>${{ github.actor }}</td></tr>
+          </table>
+          <p>El proxy reverso está corriendo <b>${{ github.ref_name }}</b>.</p>
+          <p><a href="https://github.com/${{ github.repository }}/actions">Ver acciones en GitHub</a></p>
+
+    - name: Notificar deploy fallido
+      if: failure()
+      uses: dawidd6/action-send-mail@v4
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.MAIL_USERNAME }}
+        password: ${{ secrets.MAIL_PASSWORD }}
+        subject: "❌ [ProxyReverse] Deploy FALLIDO — ${{ github.ref_name }}"
+        to: ${{ secrets.ADMIN_EMAIL }}
+        from: "Agenda CI/CD <${{ secrets.MAIL_USERNAME }}>"
+        html_body: |
+          <h2 style="color:#dc3545">❌ Deploy FALLIDO</h2>
+          <table>
+            <tr><td><b>Versión</b></td><td>${{ github.ref_name }}</td></tr>
+            <tr><td><b>Repo</b></td><td>ProxyReverse</td></tr>
+            <tr><td><b>Commit</b></td><td>${{ github.sha }}</td></tr>
+            <tr><td><b>Autor</b></td><td>${{ github.actor }}</td></tr>
+          </table>
+          <p>La configuración de Nginx NO fue aplicada. El servidor sigue con la versión anterior.</p>
+          <p><a href="https://github.com/${{ github.repository }}/actions">Revisar logs en GitHub Actions</a></p>
