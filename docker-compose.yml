@@ -8,6 +8,7 @@ services:
       - "80:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - /var/apps/landings:/var/apps/landings:ro
     networks:
       - reverseproxy_proxy-net
     restart: always
