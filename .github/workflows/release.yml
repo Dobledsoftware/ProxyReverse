@@ -1,0 +1,44 @@
+name: Crear rama de release automáticamente
+
+# Se dispara con cada push a develop (incluido el merge commit de un PR). La
+# rama release-X.Y.Z que crea acá es justamente la que dispara deploy.yml
+# (push a release-*) -- no hace falta invocarlo, el push de abajo ya lo cascadea.
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  crear-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GH_PAT }}
+
+    - name: Calcular próxima versión y pushear la rama release
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Traer las ramas release-* remotas para encontrar la última versión
+        # (el checkout de arriba sólo trae develop, no las demás ramas).
+        git fetch origin 'refs/heads/release-*:refs/remotes/origin/release-*'
+
+        ultima=$(git branch -r --list 'origin/release-*' \
+          | sed 's#.*origin/release-##' \
+          | sort -t. -k1,1n -k2,2n -k3,3n \
+          | tail -1)
+
+        if [ -z "$ultima" ]; then
+          nueva="0.0.1"
+        else
+          IFS='.' read -r mayor menor parche <<< "$ultima"
+          nueva="$mayor.$menor.$((parche + 1))"
+        fi
+
+        echo "Última release: ${ultima:-ninguna} -> Nueva release: $nueva"
+        git checkout -b "release-$nueva"
+        git push origin "release-$nueva"
