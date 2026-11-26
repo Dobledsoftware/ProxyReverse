@@ -28,15 +28,17 @@ jobs:
           git checkout ${{ github.ref_name }}
           git reset --hard origin/${{ github.ref_name }}
 
-          # Validar sintaxis contra el archivo NUEVO con un contenedor descartable.
-          # docker exec nginx_proxy nginx -t NO sirve: el bind-mount de un archivo
-          # suelto fija el inodo viejo y el contenedor no ve el default.conf actualizado.
-          docker run --rm -v /var/apps/reverseProxy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro nginx:latest nginx -t
+          # "docker exec nginx_proxy nginx -t" NO sirve acá: el bind-mount de un
+          # archivo suelto (no un directorio) fija el inodo viejo al arrancar el
+          # contenedor, así que el proceso ya corriendo sigue viendo el contenido
+          # de ANTES del git reset aunque el archivo en disco ya haya cambiado.
+          docker run --rm -v "$(pwd)/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:latest nginx -t
 
-          # Recrear el contenedor (no "nginx -s reload") por el mismo motivo de arriba:
-          # el proceso ya corriendo sigue con el inodo viejo aunque el archivo cambie.
-          docker rm -f nginx_proxy
-          docker run -d --name nginx_proxy -p 80:80 -v /var/apps/reverseProxy/nginx/default.conf:/etc/nginx/conf.d/default.conf --network reverseproxy_proxy-net --restart always nginx:latest
+          # Por el mismo motivo, "nginx -s reload" tampoco sirve: recarga la config
+          # contra el inodo viejo, no contra el archivo actualizado. Hay que recrear
+          # el contenedor para que el bind-mount tome el archivo real de ahora.
+          docker-compose down
+          docker-compose up -d
 
           echo "¡Configuración ${{ github.ref_name }} aplicada con éxito!"
 
